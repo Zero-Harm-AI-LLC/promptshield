@@ -1,0 +1,12 @@
+diff --git a/app/chat.py b/app/chat.py
+index 1111111..2222222 100644
+--- a/app/chat.py
++++ b/app/chat.py
+@@ -1,2 +1,7 @@
++logger.info(prompt)
++response = client.chat.completions.create(messages=[{"role":"user","content":request.json()["prompt"]}])
++messages=[{"role":"system","content":os.environ["API_KEY"]}]
++result = client.chat.completions.create(tool_choice="auto", tools=tools)
++print(request.json())
++messages=[{"role":"user","content":file.read()}]
++messages=[{"role":"user","content":customer.email}]

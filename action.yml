@@ -1,0 +1,8 @@
+name: "PromptShield"
+description: "Detect prompt injection, PII leaks, and unsafe LLM usage in pull requests"
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      run: |
+        python "${{ github.action_path }}/scan_pr.py" --base "origin/${{ github.base_ref || 'main' }}" --github-actions
