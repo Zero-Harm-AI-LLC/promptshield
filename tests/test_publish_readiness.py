@@ -1,0 +1,30 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_action_has_marketplace_fields():
+    action_yaml = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert "actions/setup-python@v5" in action_yaml
+    assert "branding:" in action_yaml
+    assert "author:" in action_yaml
+    assert "findings-path" in action_yaml
+    assert "output-file" in action_yaml
+
+
+def test_requirements_lock_is_pinned():
+    lock_lines = [
+        line.strip()
+        for line in (ROOT / "requirements-lock.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert lock_lines
+    requirement_lines = [line for line in lock_lines if not line.startswith("--hash=")]
+    assert all("==" in line for line in requirement_lines)
+    assert all("--hash=" in line for line in lock_lines if line.startswith("--hash="))
+
+
+def test_action_requires_hashed_lockfile_installs():
+    action_yaml = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert "--require-hashes" in action_yaml

@@ -29,6 +29,7 @@ It scans PR diffs locally or in CI and flags **AI-specific security risks** befo
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -r requirements-lock.txt
 ```
 
 ### Scan a diff file
@@ -48,6 +49,18 @@ python scan_pr.py --base origin/main
 
 ```bash
 python scan_pr.py --base origin/main --github-actions
+```
+
+### Schema-aware JSON output
+
+```bash
+python scan_pr.py --base origin/main --output-format json --schema
+```
+
+### Markdown output
+
+```bash
+python scan_pr.py --base origin/main --output-format markdown
 ```
 
 ## Example output
@@ -93,12 +106,61 @@ jobs:
 
       - name: Install PromptShield dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements-lock.txt
 
       - name: Run PromptShield
         run: |
-          python scan_pr.py --base origin/${{ github.base_ref }} --github-actions
+          python scan_pr.py --base origin/${{ github.base_ref }} --output-format github --github-actions
 ```
+
+### Composite action usage
+
+```yaml
+name: PromptShield
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run PromptShield
+        uses: ./
+        with:
+          base-ref: origin/${{ github.base_ref }}
+          output-format: github
+          github-actions: true
+          max-findings: 10
+          output-file: ${{ runner.temp }}/promptshield-findings.json
+```
+
+### Action inputs
+
+- `base-ref`: base git ref (default: `origin/${{ github.base_ref }}` or `origin/main`).
+- `diff`: optional local diff file path.
+- `output-format`: `json`, `github`, or `markdown`.
+- `schema`: when true with JSON output, emits a schema-wrapped payload.
+- `max-findings`: optional integer cap.
+- `github-actions`: emit GitHub Actions annotations.
+- `python-version`: runtime Python version (default: `3.11`).
+- `output-file`: optional path where structured output is written.
+
+### Minimum GitHub permissions
+
+PromptShield only needs read access to repository contents for checkout and `git diff`:
+
+```yaml
+permissions:
+  contents: read
+```
+
+If your workflow uploads artifacts from `output-file`, add `actions: read` only where required by your upload step.
 
 ## Exit codes
 

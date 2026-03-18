@@ -1,0 +1,22 @@
+name: PromptShield (sample)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run PromptShield
+        uses: ./
+        with:
+          base-ref: origin/${{ github.base_ref || 'main' }}
+          output-format: github
+          github-actions: true
+          max-findings: 25
+          output-file: ${{ runner.temp }}/promptshield-findings.json
