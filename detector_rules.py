@@ -20,6 +20,10 @@ except Exception:
 
 Finding = Dict[str, Any]
 
+# Findings of the same type in the same file within this many source lines
+# are treated as duplicates — important for overlapping window snippets.
+_DEDUP_LINE_BUCKET = 10
+
 
 def _matches_any(patterns: List[str], text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in patterns)
@@ -90,10 +94,16 @@ class AISecurityDetectorRules:
         r"\btrack\(",
     ]
 
-    TOOL_PATTERNS = [
+    # Patterns for LLM tool/function definitions in API calls.
+    TOOL_DEFINITION_PATTERNS = [
         r"\btools\s*[:=]",
         r"\btool_choice\b",
         r"\bfunction_call\b",
+    ]
+
+    # Patterns for dangerous host-side execution that could be
+    # triggered by LLM output (command injection, code execution).
+    DANGEROUS_EXEC_PATTERNS = [
         r"\bsubprocess\.",
         r"\bos\.system\(",
         r"\beval\(",
@@ -101,29 +111,31 @@ class AISecurityDetectorRules:
     ]
 
     DB_DATA_PATTERNS = [
+        # ORM / object-attribute access
         r"\bcustomer\.",
         r"\buser\.",
         r"\baccount\.",
         r"\bprofile\.",
-        r"\bemail\b",
-        r"\bphone\b",
-        r"\baddress\b",
+        # Highly sensitive standalone field names
         r"\bssn\b",
         r"\bdob\b",
+        # Raw DB access
         r"\bdb\.",
-        r"\bsession\.",
         r"\bqueryset\b",
-        r"\bresult\.",
-        r"\brecord\.",
+        r"\b\.objects\.",       # Django ORM queryset
+        r"\bcursor\.execute\(",
+        r"\bfetchall\(",
+        r"\bfetchone\(",
     ]
 
     FILE_READ_PATTERNS = [
         r"\bopen\(",
-        r"\bread\(",
+        # Removed bare r"\bread\(" — too broad (sockets, cursors, etc.)
         r"\bfile\.read\(",
         r"\bpathlib\.",
         r"\bloadtxt\(",
         r"\bread_text\(",
+        r"\bread_file\(",
     ]
 
     SECRET_SOURCE_PATTERNS = [
@@ -131,9 +143,12 @@ class AISecurityDetectorRules:
         r"\bgetenv\(",
         r"\bsecret\b",
         r"\bapi[_-]?key\b",
-        r"\btoken\b",
+        # Removed bare r"\btoken\b" — matches max_tokens, num_tokens, cancel tokens, etc.
+        # Replaced with specific token patterns that indicate real credentials.
+        r"\b(?:access|auth|api)[_\-]?token\b",
         r"\bpassword\b",
         r"\bcredential\b",
+        r"\bprivate[_\-]?key\b",
     ]
 
     def run(self, snippets: List[Dict[str, Any]]) -> List[Finding]:
@@ -148,7 +163,9 @@ class AISecurityDetectorRules:
             has_prompt = _matches_any(self.PROMPT_FIELD_PATTERNS, text)
             has_user_input = _matches_any(self.USER_INPUT_PATTERNS, text)
             has_logging = _matches_any(self.LOGGING_PATTERNS, text)
-            has_tooling = _matches_any(self.TOOL_PATTERNS, text)
+            has_tool_def = _matches_any(self.TOOL_DEFINITION_PATTERNS, text)
+            has_dangerous_exec = _matches_any(self.DANGEROUS_EXEC_PATTERNS, text)
+            has_tooling = has_tool_def or has_dangerous_exec
             has_db_data = _matches_any(self.DB_DATA_PATTERNS, text)
             has_file_read = _matches_any(self.FILE_READ_PATTERNS, text)
             has_secret_source = _matches_any(self.SECRET_SOURCE_PATTERNS, text)
@@ -251,7 +268,13 @@ class AISecurityDetectorRules:
                     )
                 )
 
-            if re.search(r"\bsystem\b", text, re.IGNORECASE) and has_secret_source:
+            # Require an actual system-prompt indicator, not just the word "system"
+            # (avoids false positives from os.system(), system_name variables, etc.)
+            if re.search(
+                r'["\']system["\']|\bsystem_prompt\b|\bsystem_message\b',
+                text,
+                re.IGNORECASE,
+            ) and has_secret_source:
                 findings.append(
                     _make_finding(
                         "SYSTEM_PROMPT_SECRET_RISK",
@@ -361,15 +384,23 @@ class AISecurityDetectorRules:
 
     @staticmethod
     def _dedupe(findings: List[Finding]) -> List[Finding]:
-        seen = set()
+        """Deduplicate findings, bucketing by coarse line position.
+
+        Overlapping window snippets from parse_diff can produce the same
+        logical finding at slightly different line numbers.  Bucketing by
+        ``line // _DEDUP_LINE_BUCKET`` collapses those into one entry while
+        still preserving genuinely distinct findings in different parts of
+        the same file.
+        """
+        seen: set = set()
         unique: List[Finding] = []
 
         for f in findings:
+            line = f.get("line") or 0
             key = (
                 f["type"],
                 f.get("file"),
-                f.get("line"),
-                f.get("evidence"),
+                line // _DEDUP_LINE_BUCKET,
             )
             if key not in seen:
                 seen.add(key)

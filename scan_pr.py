@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 import subprocess
 import sys
 from pathlib import Path
@@ -12,40 +12,75 @@ from detector_rules import AISecurityDetectorRules
 
 FINDING_SCHEMA_VERSION = "1.0.0"
 
+# Sliding-window parameters for parse_diff.
+# WINDOW_SIZE added lines are bundled into one snippet so that patterns
+# spread across a multi-line LLM call (e.g. messages= on one line,
+# request.json() on another) are detected together.
+WINDOW_SIZE = 10
+WINDOW_STRIDE = 5  # half-overlap keeps boundary patterns in at least one window
+
 
 def git_diff(base_ref: str) -> str:
     cmd = ["git", "diff", base_ref]
     return subprocess.check_output(cmd, text=True)
 
 
-def parse_diff(diff_text: str):
-    snippets = []
+def parse_diff(diff_text: str, window_size: int = WINDOW_SIZE, stride: int = WINDOW_STRIDE):
+    """Parse a unified diff into overlapping multi-line window snippets.
+
+    Groups consecutive added lines within each hunk and slides a window of
+    *window_size* lines with *stride* step over them.  This lets pattern
+    co-occurrence checks span several lines — e.g. an LLM API call spread
+    across constructor kwargs and the user-input argument on separate lines.
+    """
+    # Step 1 – collect added lines keyed by (file, hunk index)
+    hunks = defaultdict(list)  # (file, hunk_id) -> [(line_no, text), ...]
     current_file = None
     current_new_line = None
+    hunk_id = 0
 
-    for line in diff_text.splitlines():
-        if line.startswith("+++ b/"):
-            current_file = line[6:]
+    for raw in diff_text.splitlines():
+        if raw.startswith("+++ b/"):
+            current_file = raw[6:]
             continue
-        if line.startswith("@@"):
+        if raw.startswith("---"):
+            continue
+        if raw.startswith("@@"):
+            hunk_id += 1
             try:
-                plus = line.split("+", 1)[1].split(" ", 1)[0]
+                plus = raw.split("+", 1)[1].split(" ", 1)[0]
                 current_new_line = int(plus.split(",")[0])
             except Exception:
                 current_new_line = None
             continue
-        if line.startswith("+") and not line.startswith("+++"):
-            snippets.append({
-                "file": current_file,
-                "line_start": current_new_line,
-                "line_end": current_new_line,
-                "text": line[1:],
-            })
+        if raw.startswith("+") and not raw.startswith("+++"):
+            if current_file is not None and current_new_line is not None:
+                hunks[(current_file, hunk_id)].append((current_new_line, raw[1:]))
             if current_new_line is not None:
                 current_new_line += 1
-        elif not line.startswith("-"):
+        elif not raw.startswith("-"):
             if current_new_line is not None:
                 current_new_line += 1
+
+    # Step 2 – emit sliding-window snippets over each hunk's added lines
+    snippets = []
+    effective_stride = max(1, stride)
+    for (file, _hunk_id), lines in hunks.items():
+        if not lines:
+            continue
+        for start in range(0, len(lines), effective_stride):
+            window = lines[start : start + window_size]
+            line_start = window[0][0]
+            line_end = window[-1][0]
+            text = "\n".join(t for _, t in window)
+            snippets.append(
+                {
+                    "file": file,
+                    "line_start": line_start,
+                    "line_end": line_end,
+                    "text": text,
+                }
+            )
     return snippets
 
 
