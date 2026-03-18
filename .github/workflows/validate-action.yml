@@ -2,9 +2,6 @@ name: Validate PromptShield action
 
 on:
   push:
-    paths:
-      - "action.yml"
-      - ".github/workflows/*.yml"
   pull_request:
 
 jobs:
@@ -15,4 +12,4 @@ jobs:
 
       - name: Run actionlint
         run: |
-          docker run --rm -v "${{ github.workspace }}:/repo" rhysd/actionlint:latest /repo
+          docker run --rm -w /repo -v "${{ github.workspace }}:/repo" rhysd/actionlint:latest
