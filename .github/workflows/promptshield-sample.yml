@@ -1,22 +1,41 @@
 name: PromptShield (sample)
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  security-events: write   # required for uploading SARIF results
 
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history needed to diff against base branch
 
       - name: Run PromptShield
+        id: promptshield
         uses: ./
         with:
           base-ref: origin/${{ github.base_ref || 'main' }}
-          output-format: github
-          github-actions: true
+          output-format: sarif
+          output-file: ${{ runner.temp }}/promptshield.sarif
+          fail-on: high
           max-findings: 25
-          output-file: ${{ runner.temp }}/promptshield-findings.json
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()   # upload even when the scan step fails (findings found)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ runner.temp }}/promptshield.sarif
+
+      - name: Upload findings artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptshield-findings
+          path: ${{ runner.temp }}/promptshield.sarif
