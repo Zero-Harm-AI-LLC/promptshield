@@ -19,6 +19,13 @@ FINDING_SCHEMA_VERSION = "1.0.0"
 WINDOW_SIZE = 10
 WINDOW_STRIDE = 5  # half-overlap keeps boundary patterns in at least one window
 
+# Severity ordering used for sorting and --fail-on threshold.
+_SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
+_SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+
+# SARIF severity mapping.
+_SARIF_LEVEL = {"high": "error", "medium": "warning", "low": "note"}
+
 
 def git_diff(base_ref: str) -> str:
     cmd = ["git", "diff", base_ref]
@@ -122,6 +129,60 @@ def _build_schema(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def format_sarif(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build a SARIF 2.1.0 document from findings."""
+    # Collect unique rules (by type).
+    seen_rules: dict = {}
+    for f in findings:
+        rule_id = f.get("type") or "UNKNOWN"
+        if rule_id not in seen_rules:
+            seen_rules[rule_id] = {
+                "id": rule_id,
+                "shortDescription": {"text": f.get("title") or rule_id},
+            }
+
+    results = []
+    for f in findings:
+        rule_id = f.get("type") or "UNKNOWN"
+        severity = (f.get("severity") or "unknown").lower()
+        level = _SARIF_LEVEL.get(severity, "note")
+        message = f.get("title") or rule_id
+        result: Dict[str, Any] = {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": message},
+        }
+        file_uri = f.get("file")
+        line = f.get("line")
+        if file_uri:
+            location: Dict[str, Any] = {
+                "physicalLocation": {
+                    "artifactLocation": {"uri": file_uri, "uriBaseId": "%SRCROOT%"},
+                }
+            }
+            if line:
+                location["physicalLocation"]["region"] = {"startLine": line}
+            result["locations"] = [location]
+        results.append(result)
+
+    return {
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "PromptShield",
+                        "informationUri": "https://github.com/marketplace/actions/promptshield",
+                        "rules": list(seen_rules.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+
 def format_markdown(findings: Iterable[Dict[str, Any]]) -> str:
     findings_list = list(findings)
     if not findings_list:
@@ -149,16 +210,17 @@ def emit_markdown(findings: Iterable[Dict[str, Any]]) -> None:
 
 
 def _write_output_file(findings: List[Dict[str, Any]], output_file: str, output_format: str, use_schema: bool) -> None:
-    payload = (
-        format_markdown(findings)
-        if output_format == "markdown"
-        else json.dumps(_build_schema(findings) if use_schema else findings, indent=2)
-    )
+    if output_format == "markdown":
+        payload = format_markdown(findings)
+    elif output_format == "sarif":
+        payload = json.dumps(format_sarif(findings), indent=2)
+    else:
+        payload = json.dumps(_build_schema(findings) if use_schema else findings, indent=2)
     Path(output_file).write_text(payload + "\n", encoding="utf-8")
 
 
 def _emit_json(findings: List[Dict[str, Any]], use_schema: bool) -> None:
-    payload: Dict[str, Any] = _build_schema(findings) if use_schema else findings
+    payload: Any = _build_schema(findings) if use_schema else findings
     print(json.dumps(payload, indent=2))
 
 
@@ -173,7 +235,7 @@ def main():
     )
     parser.add_argument(
         "--output-format",
-        choices=("json", "github", "markdown"),
+        choices=("json", "github", "markdown", "sarif"),
         default="json",
         help="Output format",
     )
@@ -186,9 +248,15 @@ def main():
         "--max-findings",
         type=int,
         default=None,
-        help="Limit findings output size",
+        help="Limit findings output size (highest-severity findings are kept first)",
     )
     parser.add_argument("--output-file", help="Optional path to write findings output")
+    parser.add_argument(
+        "--fail-on",
+        choices=("high", "medium", "low", "any", "never"),
+        default="any",
+        help="Minimum severity level that causes a non-zero exit code (default: any)",
+    )
     args = parser.parse_args()
 
     output_format = args.output_format
@@ -206,6 +274,10 @@ def main():
     snippets = parse_diff(diff_text)
     rules = AISecurityDetectorRules()
     findings = rules.run(snippets)
+
+    # Sort by severity so --max-findings keeps the most important findings.
+    findings.sort(key=lambda f: _SEVERITY_ORDER.get((f.get("severity") or "unknown").lower(), 3))
+
     if args.max_findings is not None:
         findings = findings[: args.max_findings]
 
@@ -213,6 +285,8 @@ def main():
         emit_github_actions(findings)
     elif output_format == "markdown":
         emit_markdown(findings)
+    elif output_format == "sarif":
+        print(json.dumps(format_sarif(findings), indent=2))
     else:
         _emit_json(findings, args.schema)
 
@@ -223,7 +297,17 @@ def main():
             print(f"Failed to write output file: {exc}", file=sys.stderr)
             sys.exit(2)
 
-    sys.exit(1 if findings else 0)
+    # Determine exit code based on --fail-on threshold.
+    if args.fail_on == "never" or not findings:
+        sys.exit(0)
+    if args.fail_on == "any":
+        sys.exit(1)
+    threshold = _SEVERITY_RANK.get(args.fail_on, 99)
+    should_fail = any(
+        _SEVERITY_RANK.get((f.get("severity") or "").lower(), 99) <= threshold
+        for f in findings
+    )
+    sys.exit(1 if should_fail else 0)
 
 
 if __name__ == "__main__":
