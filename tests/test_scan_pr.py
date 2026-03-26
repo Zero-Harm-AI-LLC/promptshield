@@ -172,7 +172,7 @@ index 1111111..2222222 100644
     assert "AI_PROMPT_INJECTION_RISK" in output
     assert "PII_TO_LLM_RISK" in output
     assert "::warning file=app/chat.py,line=1," in output
-    assert "Detector match: email%3A alice@example.com" in output
+    assert _escape_github_annotation("Detector match: email: alice@example.com") in output
 
 
 def test_main_runs_diff_to_json_feedback_with_detector_source_details(tmp_path, monkeypatch):
