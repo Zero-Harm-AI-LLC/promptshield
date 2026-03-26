@@ -25,6 +25,31 @@ Finding = Dict[str, Any]
 _DEDUP_LINE_BUCKET = 10
 
 
+def _summarize_source_details(source_details: Any) -> Optional[str]:
+    if source_details is None:
+        return None
+    if isinstance(source_details, str):
+        text = source_details.strip()
+        return text[:200] if text else None
+    if isinstance(source_details, dict):
+        matches = source_details.get("matches")
+        if isinstance(matches, list) and matches:
+            first = matches[0]
+            if isinstance(first, dict):
+                parts = []
+                if first.get("type"):
+                    parts.append(str(first["type"]))
+                if first.get("value"):
+                    parts.append(str(first["value"]))
+                if parts:
+                    return ": ".join(parts)[:200]
+        compact = ", ".join(f"{k}={v}" for k, v in source_details.items() if not isinstance(v, (dict, list)))
+        return compact[:200] if compact else str(source_details)[:200]
+    if isinstance(source_details, list) and source_details:
+        return str(source_details[0])[:200]
+    return str(source_details)[:200]
+
+
 def _matches_any(patterns: List[str], text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in patterns)
 
@@ -37,8 +62,9 @@ def _make_finding(
     recommendation: List[str],
     file: Optional[str] = None,
     line: Optional[int] = None,
+    source_details: Optional[Any] = None,
 ) -> Finding:
-    return {
+    finding = {
         "type": finding_type,
         "severity": severity,
         "title": title,
@@ -47,6 +73,12 @@ def _make_finding(
         "evidence": evidence[:400],
         "recommendation": recommendation,
     }
+    if source_details is not None:
+        finding["source_details"] = source_details
+        source_summary = _summarize_source_details(source_details)
+        if source_summary:
+            finding["source_summary"] = source_summary
+    return finding
 
 
 class AISecurityDetectorRules:
@@ -342,7 +374,8 @@ class AISecurityDetectorRules:
 
             if detect_pii and (has_llm or has_prompt):
                 try:
-                    if detect_pii(text):
+                    pii_result = detect_pii(text)
+                    if pii_result:
                         findings.append(
                             _make_finding(
                                 "PII_TO_LLM_RISK",
@@ -355,6 +388,7 @@ class AISecurityDetectorRules:
                                 ],
                                 file,
                                 line,
+                                pii_result,
                             )
                         )
                 except Exception:
@@ -362,7 +396,8 @@ class AISecurityDetectorRules:
 
             if detect_secrets:
                 try:
-                    if detect_secrets(text):
+                    secret_result = detect_secrets(text)
+                    if secret_result:
                         findings.append(
                             _make_finding(
                                 "SECRET_EXPOSURE_RISK",
@@ -375,6 +410,7 @@ class AISecurityDetectorRules:
                                 ],
                                 file,
                                 line,
+                                secret_result,
                             )
                         )
                 except Exception:

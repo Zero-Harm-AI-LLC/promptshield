@@ -97,6 +97,8 @@ def emit_github_actions(findings):
         line = f.get("line") or 1
         title = f["type"]
         message = f["recommendation"][0] if f.get("recommendation") else f["title"]
+        if f.get("source_summary"):
+            message = f"{message} Detector match: {f['source_summary']}"
         print(
             f"::warning file={_escape_github_annotation(file)},line={line},"
             f"title={_escape_github_annotation(title)}::{_escape_github_annotation(message)}"
@@ -147,6 +149,8 @@ def format_sarif(findings: List[Dict[str, Any]]) -> Dict[str, Any]:
         severity = (f.get("severity") or "unknown").lower()
         level = _SARIF_LEVEL.get(severity, "note")
         message = f.get("title") or rule_id
+        if f.get("source_summary"):
+            message = f"{message}. Detector match: {f['source_summary']}"
         result: Dict[str, Any] = {
             "ruleId": rule_id,
             "level": level,
@@ -201,6 +205,8 @@ def format_markdown(findings: Iterable[Dict[str, Any]]) -> str:
         severity = (finding.get("severity") or "unknown").upper()
         type_ = finding.get("type") or "UNKNOWN"
         title = (finding.get("title") or "").replace("|", r"\|")
+        if finding.get("source_summary"):
+            title = f"{title} (Detector match: {finding['source_summary']})".replace("|", r"\|")
         lines.append(f"| {type_} | {severity} | `{file}:{line}` | {title} |")
     return "\n".join(lines) + "\n"
 
