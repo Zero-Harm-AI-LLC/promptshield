@@ -34,4 +34,5 @@ def test_sample_workflow_supports_reviewer_bootstrap():
     sample_workflow = (ROOT / ".github" / "workflows" / "promptshield-sample.yml").read_text(encoding="utf-8")
     assert "pull-requests: write" in sample_workflow
     assert "actions/github-script@v7" in sample_workflow
-    assert "promptshield-review" in sample_workflow
+    assert "promptshield-inline-review" in sample_workflow
+    assert "github.rest.pulls.createReview" in sample_workflow

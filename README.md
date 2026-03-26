@@ -144,15 +144,17 @@ jobs:
           output-file: ${{ runner.temp }}/promptshield-findings.json
           fail-on: never
 
-      - name: Post or update PR review summary
+      - name: Post PR review comments
         uses: actions/github-script@v7
         env:
           PROMPTSHIELD_FINDINGS: ${{ runner.temp }}/promptshield-findings.json
         with:
           script: |
             const fs = require("fs");
-            const marker = "<!-- promptshield-review -->";
+            const marker = "<!-- promptshield-inline-review -->";
             const findings = JSON.parse(fs.readFileSync(process.env.PROMPTSHIELD_FINDINGS, "utf8"));
+            const pull = context.payload.pull_request;
+            const headSha = pull.head.sha;
 
             function summarizeFinding(f) {
               const location = `${f.file || "unknown"}:${f.line || 1}`;
@@ -160,39 +162,55 @@ jobs:
               return `- \`${(f.severity || "unknown").toUpperCase()}\` \`${f.type}\` at \`${location}\` - ${f.title}.${detector}`;
             }
 
-            const body = findings.length
+            const reviewBody = findings.length
               ? [marker, "", "## PromptShield Review", "", findings.map(summarizeFinding).join("\n")].join("\n")
               : [marker, "", "## PromptShield Review", "", "No AI security findings detected in the current pull request diff."].join("\n");
 
-            const comments = await github.paginate(github.rest.issues.listComments, {
+            const existingComments = await github.paginate(github.rest.pulls.listReviewComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              pull_number: pull.number,
               per_page: 100,
             });
 
-            const existing = comments.find(comment =>
-              comment.user?.type === "Bot" && comment.body?.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
+            for (const comment of existingComments) {
+              if (comment.user?.type === "Bot" && comment.body?.includes(marker)) {
+                await github.rest.pulls.deleteReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
             }
+
+            const inlineComments = findings
+              .filter(f => f.file && f.line)
+              .slice(0, 10)
+              .map(f => ({
+                path: f.file,
+                line: f.line,
+                side: "RIGHT",
+                body: [
+                  marker,
+                  `**${(f.severity || "unknown").toUpperCase()}** \`${f.type}\``,
+                  "",
+                  f.title,
+                  f.source_summary ? `\nDetector match: ${f.source_summary}` : "",
+                ].join("\n"),
+              }));
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pull.number,
+              commit_id: headSha,
+              event: "COMMENT",
+              body: reviewBody,
+              comments: inlineComments,
+            });
 ```
 
-This keeps a single sticky PR comment updated as the pull request changes.
+This posts a PR review with inline comments on changed lines, plus a short review summary.
 
 ### Composite action usage
 
