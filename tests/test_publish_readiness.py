@@ -28,3 +28,10 @@ def test_requirements_lock_is_pinned():
 def test_action_requires_hashed_lockfile_installs():
     action_yaml = (ROOT / "action.yml").read_text(encoding="utf-8")
     assert "--require-hashes" in action_yaml
+
+
+def test_sample_workflow_supports_reviewer_bootstrap():
+    sample_workflow = (ROOT / ".github" / "workflows" / "promptshield-sample.yml").read_text(encoding="utf-8")
+    assert "pull-requests: write" in sample_workflow
+    assert "actions/github-script@v7" in sample_workflow
+    assert "promptshield-review" in sample_workflow

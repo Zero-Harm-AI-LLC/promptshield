@@ -97,7 +97,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -112,6 +112,87 @@ jobs:
         run: |
           python scan_pr.py --base origin/${{ github.base_ref }} --output-format github --github-actions
 ```
+
+### Reviewer-style bootstrap
+
+If you want PromptShield to behave like a pull request reviewer when developers push new commits, use a workflow like this:
+
+```yaml
+name: PromptShield Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run PromptShield
+        uses: Zero-Harm-AI-LLC/promptshield@v1
+        with:
+          base-ref: origin/${{ github.base_ref }}
+          output-format: json
+          output-file: ${{ runner.temp }}/promptshield-findings.json
+          fail-on: never
+
+      - name: Post or update PR review summary
+        uses: actions/github-script@v7
+        env:
+          PROMPTSHIELD_FINDINGS: ${{ runner.temp }}/promptshield-findings.json
+        with:
+          script: |
+            const fs = require("fs");
+            const marker = "<!-- promptshield-review -->";
+            const findings = JSON.parse(fs.readFileSync(process.env.PROMPTSHIELD_FINDINGS, "utf8"));
+
+            function summarizeFinding(f) {
+              const location = `${f.file || "unknown"}:${f.line || 1}`;
+              const detector = f.source_summary ? ` Detector match: ${f.source_summary}.` : "";
+              return `- \`${(f.severity || "unknown").toUpperCase()}\` \`${f.type}\` at \`${location}\` - ${f.title}.${detector}`;
+            }
+
+            const body = findings.length
+              ? [marker, "", "## PromptShield Review", "", findings.map(summarizeFinding).join("\n")].join("\n")
+              : [marker, "", "## PromptShield Review", "", "No AI security findings detected in the current pull request diff."].join("\n");
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(comment =>
+              comment.user?.type === "Bot" && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+```
+
+This keeps a single sticky PR comment updated as the pull request changes.
 
 ### Composite action usage
 
@@ -128,7 +209,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run PromptShield
         uses: ./
@@ -144,12 +225,13 @@ jobs:
 
 - `base-ref`: base git ref (default: `origin/${{ github.base_ref }}` or `origin/main`).
 - `diff`: optional local diff file path.
-- `output-format`: `json`, `github`, or `markdown`.
+- `output-format`: `json`, `github`, `markdown`, or `sarif`.
 - `schema`: when true with JSON output, emits a schema-wrapped payload.
 - `max-findings`: optional integer cap.
 - `github-actions`: emit GitHub Actions annotations.
 - `python-version`: runtime Python version (default: `3.11`).
 - `output-file`: optional path where structured output is written.
+- `fail-on`: minimum severity that causes a non-zero exit code: `high`, `medium`, `low`, `any`, or `never`.
 
 ### Minimum GitHub permissions
 
@@ -160,7 +242,12 @@ permissions:
   contents: read
 ```
 
-If your workflow uploads artifacts from `output-file`, add `actions: read` only where required by your upload step.
+If your workflow posts PR comments or review summaries, add:
+
+```yaml
+permissions:
+  pull-requests: write
+```
 
 ## Exit codes
 
