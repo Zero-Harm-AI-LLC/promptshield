@@ -32,7 +32,17 @@ def test_action_requires_hashed_lockfile_installs():
 
 def test_sample_workflow_supports_reviewer_bootstrap():
     sample_workflow = (ROOT / ".github" / "workflows" / "promptshield-sample.yml").read_text(encoding="utf-8")
+    assert "uses: ./" in sample_workflow
     assert "pull-requests: write" in sample_workflow
     assert "actions/github-script@v7" in sample_workflow
     assert "promptshield-inline-review" in sample_workflow
     assert "github.rest.pulls.createReview" in sample_workflow
+
+
+def test_readme_and_action_use_github_action_wording():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    action_yaml = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert "GitHub Action" in readme
+    assert "GitHub App" in readme
+    assert "distributed as a GitHub Action rather than a GitHub App" in readme
+    assert 'description: "GitHub Action' in action_yaml

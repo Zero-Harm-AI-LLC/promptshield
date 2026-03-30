@@ -1,11 +1,11 @@
-# PromptShield — AI Security PR Reviewer (Standalone)
+# PromptShield — AI Security GitHub Action
 
-Detect prompt injection, PII leaks, secrets exposure, and unsafe LLM usage in pull requests.
+Detect prompt injection, PII leaks, secrets exposure, and unsafe LLM usage in pull requests with a GitHub Action.
 
-PromptShield is a **free standalone GitHub Action and CLI tool** powered by
+PromptShield is a **GitHub Action and CLI tool** powered by
 [`zero-harm-ai-detectors`](https://pypi.org/project/zero-harm-ai-detectors/).
 
-It scans PR diffs locally or in CI and flags **AI-specific security risks** before code is merged.
+It scans PR diffs locally or in CI and flags **AI-specific security risks** before code is merged. It can also be used in a workflow that posts PR review comments, but it is distributed as a GitHub Action rather than a GitHub App.
 
 ## What it detects
 
@@ -113,9 +113,19 @@ jobs:
           python scan_pr.py --base origin/${{ github.base_ref }} --output-format github --github-actions
 ```
 
+### Marketplace install
+
+PromptShield is consumed directly from GitHub Marketplace or by repository reference. Users do not need to fork or copy the PromptShield repository.
+
+In a consuming repository, use:
+
+```yaml
+- uses: Zero-Harm-AI-LLC/promptshield@v1
+```
+
 ### Reviewer-style bootstrap
 
-If you want PromptShield to behave like a pull request reviewer when developers push new commits, use a workflow like this:
+If you want PromptShield to behave like a pull request reviewer when developers push new commits, add a workflow like this to the consuming repository. This gives you reviewer-style feedback through GitHub Actions.
 
 ```yaml
 name: PromptShield Review
@@ -212,6 +222,14 @@ jobs:
 
 This posts a PR review with inline comments on changed lines, plus a short review summary.
 
+### Repository-local sample
+
+This repository also includes a repo-local sample workflow for self-testing and development:
+
+- [`.github/workflows/promptshield-sample.yml`](/Users/dztran/Projects/zero-harm-ai/promptshield/.github/workflows/promptshield-sample.yml)
+
+That sample uses `uses: ./` because it runs the local checked-out action code from this repository. Marketplace consumers should use `uses: Zero-Harm-AI-LLC/promptshield@v1` instead.
+
 ### Composite action usage
 
 ```yaml
@@ -273,8 +291,8 @@ permissions:
 - `1` = findings detected
 - `2` = usage/runtime error
 
-## Future hosted version
+## Positioning
 
-A hosted GitHub App version with PR comments, explanations, and multi-repo support is under development.
+PromptShield is currently packaged and published as a GitHub Action. It is not yet a hosted GitHub App.
 
 ScalApps

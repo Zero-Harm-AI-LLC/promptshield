@@ -1,4 +1,4 @@
-name: PromptShield Review (sample)
+name: PromptShield Review (repo sample)
 
 on:
   pull_request:

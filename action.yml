@@ -1,5 +1,5 @@
 name: "PromptShield"
-description: "Detect prompt injection, PII leaks, and unsafe LLM usage in pull requests"
+description: "GitHub Action for detecting prompt injection, PII leaks, and unsafe LLM usage in pull requests"
 author: "ScalApps"
 branding:
   icon: "shield"
