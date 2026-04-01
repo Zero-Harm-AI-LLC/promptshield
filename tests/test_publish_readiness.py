@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def test_action_has_marketplace_fields():
     action_yaml = (ROOT / "action.yml").read_text(encoding="utf-8")
+    assert 'name: "PromptShield AI Security"' in action_yaml
     assert "actions/setup-python@v5" in action_yaml
     assert "branding:" in action_yaml
     assert "author:" in action_yaml

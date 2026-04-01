@@ -1,4 +1,4 @@
-name: "PromptShield"
+name: "PromptShield AI Security"
 description: "GitHub Action for detecting prompt injection, PII leaks, and unsafe LLM usage in pull requests"
 author: "ScalApps"
 branding:

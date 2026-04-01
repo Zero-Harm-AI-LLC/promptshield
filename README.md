@@ -1,6 +1,6 @@
-# PromptShield — AI Security GitHub Action
+# PromptShield AI Security — GitHub Action
 
-PromptShield is a GitHub Action and CLI tool for detecting AI-specific security risks in pull requests.
+PromptShield AI Security is a GitHub Action and CLI tool for detecting AI-specific security risks in pull requests.
 
 It scans changed code for issues such as prompt injection risk, secrets exposure, PII leaks, unsafe LLM tool usage, prompt logging, and sensitive data flowing into LLMs. PromptShield also incorporates
 [`zero-harm-ai-detectors`](https://pypi.org/project/zero-harm-ai-detectors/).
