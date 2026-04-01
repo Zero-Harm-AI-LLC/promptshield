@@ -44,5 +44,6 @@ def test_readme_and_action_use_github_action_wording():
     action_yaml = (ROOT / "action.yml").read_text(encoding="utf-8")
     assert "GitHub Action" in readme
     assert "GitHub App" in readme
-    assert "distributed as a GitHub Action rather than a GitHub App" in readme
+    assert "distributed as a GitHub Action" in readme
+    assert "not a hosted GitHub App" in readme
     assert 'description: "GitHub Action' in action_yaml
