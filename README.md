@@ -1,11 +1,18 @@
 # PromptShield — AI Security GitHub Action
 
-Detect prompt injection, PII leaks, secrets exposure, and unsafe LLM usage in pull requests with a GitHub Action.
+PromptShield is a GitHub Action and CLI tool for detecting AI-specific security risks in pull requests.
 
-PromptShield is a **GitHub Action and CLI tool** powered by
+It scans changed code for issues such as prompt injection risk, secrets exposure, PII leaks, unsafe LLM tool usage, prompt logging, and sensitive data flowing into LLMs. PromptShield also incorporates
 [`zero-harm-ai-detectors`](https://pypi.org/project/zero-harm-ai-detectors/).
 
-It scans PR diffs locally or in CI and flags **AI-specific security risks** before code is merged. It can also be used in a workflow that posts PR review comments, but it is distributed as a GitHub Action rather than a GitHub App.
+PromptShield is distributed as a GitHub Action, not a hosted GitHub App. Teams use it by adding a workflow to their repository and referencing the published action version.
+
+## What PromptShield Can Do
+
+- Scan pull request diffs before merge
+- Emit GitHub Actions annotations
+- Generate JSON, Markdown, and SARIF outputs
+- Support reviewer-style PR feedback through GitHub Actions workflows
 
 ## What it detects
 
