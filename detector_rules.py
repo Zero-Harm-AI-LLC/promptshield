@@ -190,6 +190,7 @@ class AISecurityDetectorRules:
             text = snippet.get("text", "")
             file = snippet.get("file")
             line = snippet.get("line_start")
+            lowered_text = text.lower()
 
             has_llm = _matches_any(self.LLM_API_PATTERNS, text)
             has_prompt = _matches_any(self.PROMPT_FIELD_PATTERNS, text)
@@ -218,7 +219,11 @@ class AISecurityDetectorRules:
                     )
                 )
 
-            if has_logging and ("prompt" in text.lower() or "messages" in text.lower() or "input" in text.lower()):
+            logging_related_to_prompt = has_logging and (
+                "prompt" in lowered_text or "messages" in lowered_text or "input" in lowered_text
+            )
+
+            if logging_related_to_prompt:
                 findings.append(
                     _make_finding(
                         "PROMPT_LOGGING_RISK",
@@ -372,20 +377,34 @@ class AISecurityDetectorRules:
                     )
                 )
 
-            if detect_pii and (has_llm or has_prompt):
+            if detect_pii and (has_llm or has_prompt or logging_related_to_prompt):
                 try:
                     pii_result = detect_pii(text)
                     if pii_result:
+                        finding_type = "PII_IN_LOGGING_RISK" if logging_related_to_prompt else "PII_TO_LLM_RISK"
+                        title = (
+                            "Potential PII detected in logged prompt or LLM-related content"
+                            if logging_related_to_prompt
+                            else "Potential PII detected in LLM-related code or payload"
+                        )
+                        recommendation = (
+                            [
+                                "Do not log raw prompts that may contain personal data.",
+                                "Redact PII before sending prompt content to logs or telemetry.",
+                            ]
+                            if logging_related_to_prompt
+                            else [
+                                "Remove or redact PII before sending content to an LLM.",
+                                "Prefer IDs, tokens, or structured references instead of raw personal data.",
+                            ]
+                        )
                         findings.append(
                             _make_finding(
-                                "PII_TO_LLM_RISK",
+                                finding_type,
                                 "high",
-                                "Potential PII detected in LLM-related code or payload",
+                                title,
                                 text,
-                                [
-                                    "Remove or redact PII before sending content to an LLM.",
-                                    "Prefer IDs, tokens, or structured references instead of raw personal data.",
-                                ],
+                                recommendation,
                                 file,
                                 line,
                                 pii_result,
@@ -394,20 +413,34 @@ class AISecurityDetectorRules:
                 except Exception:
                     pass
 
-            if detect_secrets:
+            if detect_secrets and (has_llm or has_prompt or logging_related_to_prompt):
                 try:
                     secret_result = detect_secrets(text)
                     if secret_result:
+                        finding_type = "SECRET_IN_LOGGING_RISK" if logging_related_to_prompt else "SECRET_EXPOSURE_RISK"
+                        title = (
+                            "Potential secret detected in logged prompt or LLM-related content"
+                            if logging_related_to_prompt
+                            else "Potential secret detected in changed code"
+                        )
+                        recommendation = (
+                            [
+                                "Do not log secrets or credentials in prompt-related telemetry.",
+                                "Redact or remove secrets before content reaches application logs.",
+                            ]
+                            if logging_related_to_prompt
+                            else [
+                                "Remove hardcoded secrets from code.",
+                                "Use environment variables or a secret manager instead.",
+                            ]
+                        )
                         findings.append(
                             _make_finding(
-                                "SECRET_EXPOSURE_RISK",
+                                finding_type,
                                 "high",
-                                "Potential secret detected in changed code",
+                                title,
                                 text,
-                                [
-                                    "Remove hardcoded secrets from code.",
-                                    "Use environment variables or a secret manager instead.",
-                                ],
+                                recommendation,
                                 file,
                                 line,
                                 secret_result,

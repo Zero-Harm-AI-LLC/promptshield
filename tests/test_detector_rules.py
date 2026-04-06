@@ -151,6 +151,34 @@ def test_run_document_to_llm():
     assert "DOCUMENT_TO_LLM_RISK" in types
 
 
+def test_run_prompt_logging_with_pii_detector(monkeypatch):
+    import detector_rules
+
+    detector_payload = {"matches": [{"type": "email", "value": "alice@example.com"}]}
+    monkeypatch.setattr(detector_rules, "detect_pii", lambda text: detector_payload)
+    monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
+
+    findings = run('logger.info("prompt=%s", "Customer email: alice@example.com")')
+    pii_logging = [f for f in findings if f["type"] == "PII_IN_LOGGING_RISK"]
+    assert pii_logging
+    assert pii_logging[0]["source_details"] == detector_payload
+    assert pii_logging[0]["source_summary"] == "email: alice@example.com"
+
+
+def test_run_prompt_logging_with_secret_detector(monkeypatch):
+    import detector_rules
+
+    detector_payload = {"matches": [{"type": "openai_key", "value": "sk-test-123"}]}
+    monkeypatch.setattr(detector_rules, "detect_pii", lambda text: False)
+    monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: detector_payload)
+
+    findings = run('logger.info("prompt input=%s", "sk-test-123")')
+    secret_logging = [f for f in findings if f["type"] == "SECRET_IN_LOGGING_RISK"]
+    assert secret_logging
+    assert secret_logging[0]["source_details"] == detector_payload
+    assert secret_logging[0]["source_summary"] == "openai_key: sk-test-123"
+
+
 # ---------------------------------------------------------------------------
 # Deduplication tests
 # ---------------------------------------------------------------------------

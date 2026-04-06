@@ -127,6 +127,34 @@ def test_detector_calls_zero_harm_secrets_for_changed_code(monkeypatch):
     assert secret_findings[0]["source_summary"] == "openai_key: sk-test-123"
 
 
+def test_detector_calls_zero_harm_pii_for_prompt_logging(monkeypatch):
+    calls = []
+    detector_payload = {"matches": [{"type": "email", "value": "alice@example.com"}]}
+
+    def fake_detect_pii(text):
+        calls.append(text)
+        return detector_payload
+
+    monkeypatch.setattr(detector_rules, "detect_pii", fake_detect_pii)
+    monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
+
+    findings = AISecurityDetectorRules().run(
+        [
+            {
+                "file": "app/chat.py",
+                "line_start": 20,
+                "text": 'logger.info("prompt=%s", "Customer email: alice@example.com")',
+            }
+        ]
+    )
+
+    assert calls == ['logger.info("prompt=%s", "Customer email: alice@example.com")']
+    pii_findings = [f for f in findings if f["type"] == "PII_IN_LOGGING_RISK"]
+    assert pii_findings
+    assert pii_findings[0]["source_details"] == detector_payload
+    assert pii_findings[0]["source_summary"] == "email: alice@example.com"
+
+
 def test_main_runs_diff_to_github_feedback_pipeline(tmp_path, monkeypatch):
     diff_file = tmp_path / "change.diff"
     diff_file.write_text(
