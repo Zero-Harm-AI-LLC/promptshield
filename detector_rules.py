@@ -54,13 +54,46 @@ def _matches_any(patterns: List[str], text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in patterns)
 
 
-def detect_pii(text: str) -> Optional[Dict[str, Any]]:
+def _detect_non_secret_text(text: str):
     if detect is None or DetectTarget is None:
         return None
 
-    result = detect(text, targets=DetectTarget.PII | DetectTarget.HARMFUL)
-    matches = [{"type": d.type.lower(), "value": d.text} for d in result.detections]
+    return detect(text, targets=DetectTarget.PII | DetectTarget.HARMFUL)
+
+
+def detect_pii(text: str) -> Optional[Dict[str, Any]]:
+    result = _detect_non_secret_text(text)
+    if result is None:
+        return None
+
+    pii_types = {
+        "EMAIL",
+        "PHONE",
+        "SSN",
+        "CREDIT_CARD",
+        "BANK_ACCOUNT",
+        "DOB",
+        "DRIVERS_LICENSE",
+        "MEDICAL_RECORD_NUMBER",
+        "ADDRESS",
+        "PERSON",
+        "LOCATION",
+        "ORGANIZATION",
+    }
+    matches = [{"type": d.type.lower(), "value": d.text} for d in result.detections if d.type in pii_types]
     return {"matches": matches} if matches else None
+
+
+def detect_harmful(text: str) -> Optional[Dict[str, Any]]:
+    result = _detect_non_secret_text(text)
+    if result is None or not result.harmful:
+        return None
+
+    return {
+        "harmful": result.harmful,
+        "severity": result.severity,
+        "scores": result.harmful_scores,
+    }
 
 
 def detect_secrets(text: str) -> Optional[Dict[str, Any]]:
@@ -426,6 +459,28 @@ class AISecurityDetectorRules:
                                 file,
                                 line,
                                 pii_result,
+                            )
+                        )
+                except Exception:
+                    pass
+
+            if detect_harmful and logging_related_to_prompt:
+                try:
+                    harmful_result = detect_harmful(text)
+                    if harmful_result:
+                        findings.append(
+                            _make_finding(
+                                "HARMFUL_IN_LOGGING_RISK",
+                                "high",
+                                "Potential harmful content detected in logged prompt or LLM-related content",
+                                text,
+                                [
+                                    "Do not log prompt content that may contain harmful or abusive language.",
+                                    "Filter, redact, or suppress harmful content before it reaches logs or telemetry.",
+                                ],
+                                file,
+                                line,
+                                harmful_result,
                             )
                         )
                 except Exception:

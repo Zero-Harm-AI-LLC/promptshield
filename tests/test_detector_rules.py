@@ -170,6 +170,7 @@ def test_run_prompt_logging_with_secret_detector(monkeypatch):
 
     detector_payload = {"matches": [{"type": "openai_key", "value": "sk-test-123"}]}
     monkeypatch.setattr(detector_rules, "detect_pii", lambda text: False)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: detector_payload)
 
     findings = run('logger.info("prompt input=%s", "sk-test-123")')
@@ -177,6 +178,21 @@ def test_run_prompt_logging_with_secret_detector(monkeypatch):
     assert secret_logging
     assert secret_logging[0]["source_details"] == detector_payload
     assert secret_logging[0]["source_summary"] == "openai_key: sk-test-123"
+
+
+def test_run_prompt_logging_with_harmful_detector(monkeypatch):
+    import detector_rules
+
+    detector_payload = {"harmful": True, "severity": "high", "scores": {"threat": 1.0}}
+    monkeypatch.setattr(detector_rules, "detect_pii", lambda text: False)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: detector_payload)
+    monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
+
+    findings = run('logger.info("prompt=%s", "I am going to kill you.")')
+    harmful_logging = [f for f in findings if f["type"] == "HARMFUL_IN_LOGGING_RISK"]
+    assert harmful_logging
+    assert harmful_logging[0]["source_details"] == detector_payload
+    assert harmful_logging[0]["source_summary"] == "harmful=True, severity=high"
 
 
 # ---------------------------------------------------------------------------

@@ -81,6 +81,7 @@ def test_detector_calls_zero_harm_pii_for_llm_snippet(monkeypatch):
         return detector_payload
 
     monkeypatch.setattr(detector_rules, "detect_pii", fake_detect_pii)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
 
     findings = AISecurityDetectorRules().run(
@@ -109,6 +110,7 @@ def test_detector_calls_zero_harm_secrets_for_changed_code(monkeypatch):
         return detector_payload
 
     monkeypatch.setattr(detector_rules, "detect_pii", lambda text: False)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", fake_detect_secrets)
 
     findings = AISecurityDetectorRules().run(
@@ -144,6 +146,22 @@ def test_detect_pii_uses_pii_and_harmful_targets(monkeypatch):
     assert calls == [("Customer email: alice@example.com", detector_rules.DetectTarget.PII | detector_rules.DetectTarget.HARMFUL)]
 
 
+def test_detect_harmful_uses_pii_and_harmful_targets(monkeypatch):
+    calls = []
+
+    def fake_detect(text, targets):
+        calls.append((text, targets))
+        return SimpleNamespace(detections=[], harmful=True, severity="high", harmful_scores={"threat": 1.0})
+
+    monkeypatch.setattr(detector_rules, "detect", fake_detect)
+    monkeypatch.setattr(detector_rules, "DetectTarget", detector_rules.DetectTarget)
+
+    result = detector_rules.detect_harmful("I am going to kill you.")
+
+    assert result == {"harmful": True, "severity": "high", "scores": {"threat": 1.0}}
+    assert calls == [("I am going to kill you.", detector_rules.DetectTarget.PII | detector_rules.DetectTarget.HARMFUL)]
+
+
 def test_detect_secrets_uses_secret_target(monkeypatch):
     calls = []
 
@@ -167,6 +185,13 @@ def test_real_zero_harm_api_detects_pii_logging_pattern():
     assert result["matches"][0]["value"] == "alice@example.com"
 
 
+def test_real_zero_harm_api_detects_harmful_logging_pattern():
+    result = detector_rules.detect_harmful('logger.info("prompt=%s", "I am going to kill you.")')
+    assert result
+    assert result["harmful"] is True
+    assert result["severity"] in {"low", "medium", "high"}
+
+
 def test_real_zero_harm_api_detects_secret_logging_pattern():
     result = detector_rules.detect_secrets(
         'logger.info("prompt=%s", "API key: sk-1234567890abcdef1234567890abcdef")'
@@ -185,6 +210,7 @@ def test_detector_calls_zero_harm_pii_for_prompt_logging(monkeypatch):
         return detector_payload
 
     monkeypatch.setattr(detector_rules, "detect_pii", fake_detect_pii)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
 
     findings = AISecurityDetectorRules().run(
@@ -202,6 +228,35 @@ def test_detector_calls_zero_harm_pii_for_prompt_logging(monkeypatch):
     assert pii_findings
     assert pii_findings[0]["source_details"] == detector_payload
     assert pii_findings[0]["source_summary"] == "email: alice@example.com"
+
+
+def test_detector_calls_zero_harm_harmful_for_prompt_logging(monkeypatch):
+    calls = []
+    detector_payload = {"harmful": True, "severity": "high", "scores": {"threat": 1.0}}
+
+    def fake_detect_harmful(text):
+        calls.append(text)
+        return detector_payload
+
+    monkeypatch.setattr(detector_rules, "detect_pii", lambda text: False)
+    monkeypatch.setattr(detector_rules, "detect_harmful", fake_detect_harmful)
+    monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
+
+    findings = AISecurityDetectorRules().run(
+        [
+            {
+                "file": "app/chat.py",
+                "line_start": 20,
+                "text": 'logger.info("prompt=%s", "I am going to kill you.")',
+            }
+        ]
+    )
+
+    assert calls == ['logger.info("prompt=%s", "I am going to kill you.")']
+    harmful_findings = [f for f in findings if f["type"] == "HARMFUL_IN_LOGGING_RISK"]
+    assert harmful_findings
+    assert harmful_findings[0]["source_details"] == detector_payload
+    assert harmful_findings[0]["source_summary"] == "harmful=True, severity=high"
 
 
 def test_main_runs_diff_to_github_feedback_pipeline(tmp_path, monkeypatch):
@@ -228,6 +283,7 @@ index 1111111..2222222 100644
         return detector_payload
 
     monkeypatch.setattr(detector_rules, "detect_pii", fake_detect_pii)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
     monkeypatch.setattr(
         sys,
@@ -269,6 +325,7 @@ index 1111111..2222222 100644
 
     detector_payload = {"matches": [{"type": "email", "value": "alice@example.com"}]}
     monkeypatch.setattr(detector_rules, "detect_pii", lambda text: detector_payload)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
     monkeypatch.setattr(
         sys,
@@ -309,6 +366,7 @@ index 1111111..2222222 100644
     )
 
     monkeypatch.setattr(detector_rules, "detect_pii", lambda text: False)
+    monkeypatch.setattr(detector_rules, "detect_harmful", lambda text: False)
     monkeypatch.setattr(detector_rules, "detect_secrets", lambda text: False)
     monkeypatch.setattr(
         sys,
