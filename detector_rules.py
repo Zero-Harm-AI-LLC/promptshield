@@ -12,10 +12,10 @@ import re
 from typing import Any, Dict, List, Optional
 
 try:
-    from zero_harm_ai_detectors import detect_pii, detect_secrets
+    from zero_harm_ai_detectors import DetectTarget, detect
 except Exception:
-    detect_pii = None
-    detect_secrets = None
+    DetectTarget = None
+    detect = None
 
 
 Finding = Dict[str, Any]
@@ -52,6 +52,24 @@ def _summarize_source_details(source_details: Any) -> Optional[str]:
 
 def _matches_any(patterns: List[str], text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+
+def detect_pii(text: str) -> Optional[Dict[str, Any]]:
+    if detect is None or DetectTarget is None:
+        return None
+
+    result = detect(text, targets=DetectTarget.PII | DetectTarget.HARMFUL)
+    matches = [{"type": d.type.lower(), "value": d.text} for d in result.detections]
+    return {"matches": matches} if matches else None
+
+
+def detect_secrets(text: str) -> Optional[Dict[str, Any]]:
+    if detect is None or DetectTarget is None:
+        return None
+
+    result = detect(text, targets=DetectTarget.SECRET)
+    matches = [{"type": d.type.lower(), "value": d.text} for d in result.detections]
+    return {"matches": matches} if matches else None
 
 
 def _make_finding(

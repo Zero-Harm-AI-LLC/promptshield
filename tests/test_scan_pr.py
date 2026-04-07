@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -125,6 +126,54 @@ def test_detector_calls_zero_harm_secrets_for_changed_code(monkeypatch):
     assert secret_findings
     assert secret_findings[0]["source_details"] == detector_payload
     assert secret_findings[0]["source_summary"] == "openai_key: sk-test-123"
+
+
+def test_detect_pii_uses_pii_and_harmful_targets(monkeypatch):
+    calls = []
+
+    def fake_detect(text, targets):
+        calls.append((text, targets))
+        return SimpleNamespace(detections=[SimpleNamespace(type="EMAIL", text="alice@example.com")])
+
+    monkeypatch.setattr(detector_rules, "detect", fake_detect)
+    monkeypatch.setattr(detector_rules, "DetectTarget", detector_rules.DetectTarget)
+
+    result = detector_rules.detect_pii("Customer email: alice@example.com")
+
+    assert result == {"matches": [{"type": "email", "value": "alice@example.com"}]}
+    assert calls == [("Customer email: alice@example.com", detector_rules.DetectTarget.PII | detector_rules.DetectTarget.HARMFUL)]
+
+
+def test_detect_secrets_uses_secret_target(monkeypatch):
+    calls = []
+
+    def fake_detect(text, targets):
+        calls.append((text, targets))
+        return SimpleNamespace(detections=[SimpleNamespace(type="API_KEY", text="sk-test-1234567890abcdef1234567890abcdef")])
+
+    monkeypatch.setattr(detector_rules, "detect", fake_detect)
+    monkeypatch.setattr(detector_rules, "DetectTarget", detector_rules.DetectTarget)
+
+    result = detector_rules.detect_secrets("API key: sk-test-1234567890abcdef1234567890abcdef")
+
+    assert result == {"matches": [{"type": "api_key", "value": "sk-test-1234567890abcdef1234567890abcdef"}]}
+    assert calls == [("API key: sk-test-1234567890abcdef1234567890abcdef", detector_rules.DetectTarget.SECRET)]
+
+
+def test_real_zero_harm_api_detects_pii_logging_pattern():
+    result = detector_rules.detect_pii('logger.info("prompt=%s", "Customer email: alice@example.com")')
+    assert result
+    assert result["matches"][0]["type"] == "email"
+    assert result["matches"][0]["value"] == "alice@example.com"
+
+
+def test_real_zero_harm_api_detects_secret_logging_pattern():
+    result = detector_rules.detect_secrets(
+        'logger.info("prompt=%s", "API key: sk-1234567890abcdef1234567890abcdef")'
+    )
+    assert result
+    assert result["matches"][0]["type"] == "api_key"
+    assert result["matches"][0]["value"] == "sk-1234567890abcdef1234567890abcdef"
 
 
 def test_detector_calls_zero_harm_pii_for_prompt_logging(monkeypatch):
