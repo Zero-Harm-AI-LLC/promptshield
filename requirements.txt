@@ -1,1 +1,1 @@
-zero-harm-ai-detectors
+zero-harm-ai-detectors==0.2.8

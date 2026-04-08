@@ -120,7 +120,6 @@ regex==2026.2.28 \
     --hash=sha256:fd0ce43e71d825b7c0661f9c54d4d74bd97c56c3fd102a8985bcfea48236bacb \
     --hash=sha256:fd63453f10d29097cc3dc62d070746523973fb5aa1c66d25f8558bebd47fed61
     # via zero-harm-ai-detectors
-zero-harm-ai-detectors==0.2.7 \
-    --hash=sha256:351e696f7e0c07f088d2ef97c95ed18f0cc29e099cb0797e87b4989169623552 \
-    --hash=sha256:b86a8e83f29ca9851e569791f55aa4148555c0aa157aafa08571bd45bb945d6f
+zero-harm-ai-detectors==0.2.8 \
+    --hash=sha256:13d213e1110c56fa1c80e434fb73e0dc2bf97033090bb95a26242939dcc84134
     # via -r requirements.txt
